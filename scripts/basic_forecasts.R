@@ -32,8 +32,20 @@ pothole_history <- pothole_df %>%
 pothole_history %>% 
   autoplot()
 
-components <- pothole_history %>% 
-  mutate(potholes = log(potholes)) %>% 
+pothole_history_log <- pothole_history %>% 
+  mutate(potholes = log(potholes))
+
+pothole_history_log %>% 
+  gg_season()
+
+pothole_history_log %>% 
+  gg_subseries()
+
+pothole_history_log %>% 
+  ACF(potholes) %>% 
+  autoplot()
+
+components <- pothole_history_log %>% 
   model(STL(potholes ~ trend(window = 11) +
               season(window = 5))) %>% 
   components()
@@ -60,15 +72,26 @@ count_model %>%
 pothole_history %>% 
   features(potholes, features = feat_stl)
 
-pothole_history_log <- pothole_history %>% 
-  mutate(potholes = log(potholes))
+pothole_history %>% 
+  features(potholes, feat_acf)
+
+
 
 model_df <- pothole_history_log %>% 
-  model(ETS(potholes),
-        TSLM(potholes),
-        ARIMA(potholes))
+  model(naive = NAIVE(potholes),
+        snaive = SNAIVE(potholes),
+        ets = ETS(potholes),
+        tslm = TSLM(potholes),
+        drift = NAIVE(potholes ~ drift()),
+        arima = ARIMA(potholes))
   
 model_df %>% 
-  forecast(h = 52) %>% 
+  forecast(h = 24) %>% 
   autoplot() +
-  autolayer(pothole_history_log)
+  autolayer(pothole_history_log %>% 
+              slice_tail(n = 52*2)) +
+  facet_wrap(~.model, ncol = 1)
+
+model_df %>% 
+  accuracy() %>% 
+  arrange(RMSSE)
