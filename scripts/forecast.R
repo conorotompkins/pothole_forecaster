@@ -153,3 +153,6 @@ reconciled_fc |>
   accuracy(pothole_dfh) |> 
   select(.model, council_district, RMSSE) |> 
   pivot_wider(names_from = .model, values_from = RMSSE)
+
+#notes
+#https://github.com/tidyverts/fabletools/issues/103
