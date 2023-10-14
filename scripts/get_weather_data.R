@@ -14,14 +14,15 @@ local_stations <- isd_history |>
 
 local_stations
 
-tbar <- get_GSOD(years = c(2015:2023), station = "725205-14762") |> 
+tbar <- get_GSOD(years = c(2014:2023), station = "725205-14762") |> 
   as_tibble() |> 
   clean_names()
 
 glimpse(tbar)
 
 tbar_subset <- tbar |> 
-  select(stnid, name, date = yearmoda, min, temp, max, prcp, sndp)
+  select(stnid, name, date = yearmoda, min, temp, max, prcp, sndp) |> 
+  mutate(max_min_diff = max - min)
 
 tbar_subset |> 
   ggplot(aes(date, temp)) +
