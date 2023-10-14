@@ -4,21 +4,66 @@ library(janitor)
 library(future)
 library(tictoc)
 library(hrbrthemes)
+library(skimr)
 
 theme_set(theme_ipsum())
 
 plan(multisession)
+
+#read in pothole data
 
 pothole_data <- read_csv("inputs/wprdc_311.csv") |> 
   clean_names() |> 
   filter(request_type == "Potholes") |> 
   mutate(created_yearmonth = yearmonth(created_on))
 
+skim(pothole_data)
+
+#read in weather data
+weather_data <- read_csv("inputs/allegheny_county_weather_data.csv")
+
+glimpse(weather_data)
+skim(weather_data)
+
+weather_data <- weather_data |> 
+  mutate(date_ym = yearmonth(date)) |> 
+  group_by(date_ym) |> 
+  summarize(min_avg = mean(min),
+            temp_avg = mean(temp),
+            max_avg = mean(max),
+            prcp_sum = sum(prcp)) |> 
+  ungroup()
+
+skim(weather_data)
+
+weather_data |> 
+  ggplot(aes(date_ym, temp_avg)) +
+  geom_ribbon(aes(ymin = min_avg, ymax = max_avg), alpha = .3) +
+  geom_line()
+
+weather_data |> 
+  ggplot(aes(date_ym, prcp_sum)) +
+  geom_col()
+
+weather_data |> 
+  mutate(year = as.factor(year(date_ym))) |> 
+  ggplot(aes(min_avg, prcp_sum, color = year)) +
+  geom_point() +
+  geom_vline(xintercept = 0) +
+  facet_wrap(vars(year))
+
+#create basic tsibble
+
 pothole_df <- pothole_data |> 
   group_by(created_yearmonth, request_type) |> 
   summarize(report_count = n()) |> 
   ungroup() |>
   as_tsibble()
+
+#join pothole and weather data
+
+pothole_df <- pothole_df |> 
+  left_join(weather_data, by = c("created_yearmonth" = "date_ym"))
 
 glimpse(pothole_df)
 
@@ -32,9 +77,20 @@ pothole_df |>
 pothole_df |> 
   gg_subseries()
 
-# pothole_df <- pothole_df |> 
-#   stretch_tsibble(.step = 12, .init = 24)
+pothole_df |> 
+  ggplot(aes(temp_avg, report_count)) +
+  geom_point()
 
+pothole_df |> 
+  ggplot(aes(prcp_sum, report_count)) +
+  geom_point()
+
+pothole_df |> 
+  mutate(temp_diff = max_avg - min_avg) |> 
+  ggplot(aes(temp_diff, report_count)) +
+  geom_point()
+
+#split into train/test and forecast
 data_test <- pothole_df |> 
   slice_tail(prop = .2)
 
@@ -60,7 +116,7 @@ pothole_fc |>
 pothole_fc |> 
   autoplot(pothole_df)
 
-#cv
+#CV and forecast
 pothole_cv <- stretch_tsibble(pothole_df, .step = 1, .init = 24)
 
 pothole_cv |> 
@@ -204,6 +260,12 @@ reconciled_fc |>
   accuracy(pothole_dfh) |> 
   select(.model, council_district, RMSSE) |> 
   pivot_wider(names_from = .model, values_from = RMSSE)
+
+
+#forecast with exogenous variables
+
+
+plan(sequential)
 
 #notes
 #https://github.com/tidyverts/fabletools/issues/103
