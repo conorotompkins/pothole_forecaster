@@ -1,6 +1,13 @@
 library(fpp3)
 library(tidyverse)
 library(janitor)
+library(future)
+library(tictoc)
+library(hrbrthemes)
+
+theme_set(theme_ipsum())
+
+plan(multisession)
 
 pothole_data <- read_csv("inputs/wprdc_311.csv") |> 
   clean_names() |> 
@@ -34,10 +41,14 @@ data_test <- pothole_df |>
 data_train <- pothole_df |> 
   anti_join(data_test, by = "created_yearmonth")
 
-model_df <- data_train |> 
-  model(arima = ARIMA(log(report_count + 1)),
-        ets = ETS(log(report_count + 1)),
-        ts_lm = TSLM(log(report_count + 1) ~ trend() + season()))
+progressr::with_progress(
+  
+  model_df <- data_train |> 
+    model(arima = ARIMA(log(report_count + 1)),
+          ets = ETS(log(report_count + 1)),
+          ts_lm = TSLM(log(report_count + 1) ~ trend() + season()))
+  
+)
 
 pothole_fc <- model_df |> 
   forecast(data_test)
@@ -50,30 +61,68 @@ pothole_fc |>
   autoplot(pothole_df)
 
 #cv
-pothole_cv <- stretch_tsibble(pothole_df, .step = 6, .init = 24)
+pothole_cv <- stretch_tsibble(pothole_df, .step = 1, .init = 24)
 
 pothole_cv |> 
   count(.id)
 
-models_cv <- pothole_cv |> 
-  model(arima = ARIMA(log(report_count + 1)),
-        ets = ETS(log(report_count + 1)),
-        ts_lm = TSLM(log(report_count + 1) ~ trend() + season()))
+#132.048 sec elapsed
+tic()
+progressr::with_progress(
+  
+  models_cv <- pothole_cv |> 
+    model(arima = ARIMA(log(report_count + 1)),
+          ets = ETS(log(report_count + 1)),
+          ts_lm = TSLM(log(report_count + 1) ~ trend() + season()))
+  
+)
+toc()
 
-forecast_cv <- models_cv |> 
-  forecast(h = 12)
+#3.271 sec elapsed
+tic()
+progressr::with_progress(
+  
+  forecast_cv <- models_cv |> 
+    forecast(h = 12)
+  
+)
+toc()
 
-forecast_cv |> 
-  accuracy(pothole_df, measures = list(point_accuracy_measures, distribution_accuracy_measures, skill_cprs = skill_score(CRPS))) |> 
-  select(.model, .type, MAPE, RMSSE, CRPS, skill_cprs) |> 
+#72.336 sec elapsed
+tic()
+progressr::with_progress(
+  
+  cv_acc <- forecast_cv |> 
+    accuracy(pothole_df, measures = list(point_accuracy_measures, distribution_accuracy_measures, skill_cprs = skill_score(CRPS))) |> 
+    select(.model, .type, MAPE, RMSSE, skill_cprs) |> 
+    arrange(desc(skill_cprs))
+  
+)
+toc()
+
+cv_acc |> 
   arrange(desc(skill_cprs))
 
 forecast_cv |> 
+  filter(between(.id, 65, 70)) |> 
   autoplot(pothole_cv) +
   facet_wrap(vars(.id), ncol = 2, scales = "free_y")
 
-final_model <- pothole_df |> 
-  model(ts_lm = TSLM(log(report_count + 1) ~ trend() + season()))
+forecast_cv |> 
+  mutate(.id = .id + 1) |> 
+  filter(between(.id, 65, 70)) |> 
+  autoplot(pothole_cv, alpha = .1) +
+  facet_wrap(vars(.id), ncol = 2, scales = "free_y")
+
+#0.322 sec elapsed
+tic()
+progressr::with_progress(
+  
+  final_model <- pothole_df |> 
+    model(ts_lm = TSLM(log(report_count + 1) ~ trend() + season()))
+  
+)
+toc()
 
 report(final_model)
 
@@ -129,13 +178,15 @@ test <- new_data(train, ts_length - train_length) |>
   left_join(lambda_df)
 
 models <- train |> 
-  model(model = ARIMA(box_cox(report_count, first(lambda_guerrero))))
+  model(model = ARIMA(fabletools::box_cox(report_count, dplyr::first(lambda_guerrero))))
 
 fc_test <- models |> 
   forecast(test)
 
 fc_test |> 
-  accuracy(pothole_dfh)
+  accuracy(pothole_df, measures = list(point_accuracy_measures, distribution_accuracy_measures, skill_cprs = skill_score(CRPS))) |> 
+  select(.model, .type, MAPE, RMSSE, skill_cprs) |> 
+  arrange(desc(skill_cprs))
 
 fc_test|> 
   autoplot(pothole_dfh) +
