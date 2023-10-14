@@ -65,6 +65,13 @@ pothole_df <- pothole_data |>
 pothole_df <- pothole_df |> 
   left_join(weather_data, by = c("created_yearmonth" = "date_ym"))
 
+# lambda <- pothole_df |> 
+#   features(report_count, guerrero) |> 
+#   pull(lambda_guerrero)
+# 
+# pothole_df <- pothole_df |> 
+#   mutate(lambda_guerrero = lambda)
+
 glimpse(pothole_df)
 
 pothole_df |> 
@@ -264,6 +271,26 @@ reconciled_fc |>
 
 #forecast with exogenous variables
 
+model_df_exo <- pothole_cv |> 
+  model(ets = ETS(log(report_count + 1)),
+        ts_lm = TSLM(log(report_count + 1) ~ trend() + season()),
+        ts_lm_exo = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg + min_avg + max_avg + prcp_sum),
+        arima = ARIMA(log(report_count + 1)),
+        arima_exo = ARIMA(log(report_count + 1) ~ temp_avg + min_avg + max_avg + prcp_sum))
+
+pothole_fc_exo <- model_df_exo |> 
+  forecast(data_test)
+
+fc_exo_acc <- pothole_fc_exo |> 
+  accuracy(pothole_df, measures = list(point_accuracy_measures, distribution_accuracy_measures, skill_crps = skill_score(CRPS))) |> 
+  select(.model, .type, MAPE, RMSSE, skill_crps) |> 
+  arrange(desc(skill_crps))
+
+pothole_fc_exo |> 
+  left_join(fc_exo_acc) |> 
+  mutate(.model = fct_reorder(.model, skill_crps, .desc = TRUE)) |> 
+  autoplot(pothole_df) +
+  facet_wrap(vars(.model), ncol = 1)
 
 plan(sequential)
 
