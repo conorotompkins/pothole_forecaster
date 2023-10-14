@@ -32,7 +32,9 @@ weather_data <- weather_data |>
             temp_avg = mean(temp),
             max_avg = mean(max),
             prcp_sum = sum(prcp)) |> 
-  ungroup()
+  ungroup() |> 
+  mutate(across(where(is.numeric), ~lag(.x, 1), .names = "{.col}_lag1")) |> 
+  mutate(across(where(is.numeric), ~lag(.x, 3), .names = "{.col}_lag3"))
 
 skim(weather_data)
 
@@ -270,13 +272,23 @@ reconciled_fc |>
 
 
 #forecast with exogenous variables
-
-model_df_exo <- pothole_cv |> 
+#296.7 sec elapsed
+tic()
+progressr::with_progress(
+  
+model_df_exo <- data_train |> 
   model(ets = ETS(log(report_count + 1)),
         ts_lm = TSLM(log(report_count + 1) ~ trend() + season()),
         ts_lm_exo = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg + min_avg + max_avg + prcp_sum),
+        ts_lm_exo_lag1 = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg_lag1 + min_avg_lag1 + max_avg_lag1 + prcp_sum_lag1),
+        ts_lm_exo_lag3 = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg_lag3 + min_avg_lag3 + max_avg_lag3 + prcp_sum_lag3),
         arima = ARIMA(log(report_count + 1)),
-        arima_exo = ARIMA(log(report_count + 1) ~ temp_avg + min_avg + max_avg + prcp_sum))
+        arima_exo = ARIMA(log(report_count + 1) ~ temp_avg + min_avg + max_avg + prcp_sum),
+        arima_exo_lag1 = ARIMA(log(report_count + 1) ~ temp_avg_lag1 + min_avg_lag1 + max_avg_lag1 + prcp_sum_lag1),
+        arima_exo_lag3 = ARIMA(log(report_count + 1) ~ temp_avg_lag3 + min_avg_lag3 + max_avg_lag3 + prcp_sum_lag3))
+
+)
+toc()
 
 pothole_fc_exo <- model_df_exo |> 
   forecast(data_test)
@@ -285,6 +297,8 @@ fc_exo_acc <- pothole_fc_exo |>
   accuracy(pothole_df, measures = list(point_accuracy_measures, distribution_accuracy_measures, skill_crps = skill_score(CRPS))) |> 
   select(.model, .type, MAPE, RMSSE, skill_crps) |> 
   arrange(desc(skill_crps))
+
+fc_exo_acc
 
 pothole_fc_exo |> 
   left_join(fc_exo_acc) |> 
