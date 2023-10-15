@@ -34,6 +34,7 @@ weather_data <- weather_data |>
             prcp_sum = sum(prcp)) |> 
   ungroup() |> 
   mutate(across(where(is.numeric), ~lag(.x, 1), .names = "{.col}_lag1")) |> 
+  mutate(across(where(is.numeric), ~lag(.x, 2), .names = "{.col}_lag2")) |> 
   mutate(across(where(is.numeric), ~lag(.x, 3), .names = "{.col}_lag3"))
 
 skim(weather_data)
@@ -310,7 +311,7 @@ pothole_fc_exo |>
 
 #cv
 
-#350.215 sec elapsed
+#384.208 sec elapsed
 tic()
 progressr::with_progress(
   
@@ -319,10 +320,12 @@ progressr::with_progress(
           ts_lm = TSLM(log(report_count + 1) ~ trend() + season()),
           ts_lm_exo = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg + min_avg + max_avg + prcp_sum),
           ts_lm_exo_lag1 = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg_lag1 + min_avg_lag1 + max_avg_lag1 + prcp_sum_lag1),
+          ts_lm_exo_lag2 = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg_lag2 + min_avg_lag2 + max_avg_lag2 + prcp_sum_lag2),
           ts_lm_exo_lag3 = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg_lag3 + min_avg_lag3 + max_avg_lag3 + prcp_sum_lag3),
           arima = ARIMA(log(report_count + 1)),
           arima_exo = ARIMA(log(report_count + 1) ~ temp_avg + min_avg + max_avg + prcp_sum),
           arima_exo_lag1 = ARIMA(log(report_count + 1) ~ temp_avg_lag1 + min_avg_lag1 + max_avg_lag1 + prcp_sum_lag1),
+          arima_exo_lag2 = ARIMA(log(report_count + 1) ~ temp_avg_lag2 + min_avg_lag2 + max_avg_lag2 + prcp_sum_lag2),
           arima_exo_lag3 = ARIMA(log(report_count + 1) ~ temp_avg_lag3 + min_avg_lag3 + max_avg_lag3 + prcp_sum_lag3)
           )
   
@@ -344,12 +347,25 @@ horizon_data <- new_data(pothole_cv, 12) |>
 pothole_fc_exo <- model_df_exo |> 
   forecast(horizon_data)
 
+tic()
 fc_exo_acc <- pothole_fc_exo |> 
   accuracy(pothole_df, measures = list(point_accuracy_measures, distribution_accuracy_measures, skill_crps = skill_score(CRPS))) |> 
   select(.model, .type, MAPE, RMSSE, skill_crps) |> 
   arrange(desc(skill_crps))
+toc()
 
 fc_exo_acc
+
+fc_exo_acc |> 
+  ggplot(aes(RMSSE, skill_crps, label = .model)) +
+  geom_label() +
+  scale_x_reverse()
+
+fc_exo_acc |> 
+  filter(!.model %in% c("ets", "arima")) |> 
+  ggplot(aes(RMSSE, skill_crps, label = .model)) +
+  geom_label() +
+  scale_x_reverse()
 
 pothole_fc_exo |> 
   filter(.id == max(.id)) |> 
