@@ -174,8 +174,8 @@ forecast_cv |>
   facet_wrap(vars(.id), ncol = 2, scales = "free_y")
 
 forecast_cv |> 
-  mutate(.id = .id + 1) |> 
   filter(between(.id, 65, 70)) |> 
+  mutate(.id = .id + 1) |> 
   autoplot(pothole_cv, alpha = .1) +
   facet_wrap(vars(.id), ncol = 2, scales = "free_y")
 
@@ -272,6 +272,7 @@ reconciled_fc |>
 
 
 #forecast with exogenous variables
+#train/test
 #296.7 sec elapsed
 tic()
 progressr::with_progress(
@@ -305,6 +306,68 @@ pothole_fc_exo |>
   mutate(.model = fct_reorder(.model, skill_crps, .desc = TRUE)) |> 
   autoplot(pothole_df) +
   facet_wrap(vars(.model), ncol = 1)
+
+
+#cv
+
+#350.215 sec elapsed
+tic()
+progressr::with_progress(
+  
+  model_df_exo <- pothole_cv |> 
+    model(ets = ETS(log(report_count + 1)),
+          ts_lm = TSLM(log(report_count + 1) ~ trend() + season()),
+          ts_lm_exo = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg + min_avg + max_avg + prcp_sum),
+          ts_lm_exo_lag1 = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg_lag1 + min_avg_lag1 + max_avg_lag1 + prcp_sum_lag1),
+          ts_lm_exo_lag3 = TSLM(log(report_count + 1) ~ trend() + season() + temp_avg_lag3 + min_avg_lag3 + max_avg_lag3 + prcp_sum_lag3),
+          arima = ARIMA(log(report_count + 1)),
+          arima_exo = ARIMA(log(report_count + 1) ~ temp_avg + min_avg + max_avg + prcp_sum),
+          arima_exo_lag1 = ARIMA(log(report_count + 1) ~ temp_avg_lag1 + min_avg_lag1 + max_avg_lag1 + prcp_sum_lag1),
+          arima_exo_lag3 = ARIMA(log(report_count + 1) ~ temp_avg_lag3 + min_avg_lag3 + max_avg_lag3 + prcp_sum_lag3)
+          )
+  
+)
+toc()
+
+new_weather_data <- pothole_df |> 
+  mutate(month = month(created_yearmonth, label = TRUE)) |> 
+  as_tibble() |> 
+  select(month, min_avg:prcp_sum_lag1_lag3) |> 
+  group_by(month) |> 
+  summarize(across(where(is.numeric), mean)) |> 
+  ungroup()
+
+horizon_data <- new_data(pothole_cv, 12) |> 
+  mutate(month = month(created_yearmonth, label = TRUE)) |> 
+  left_join(new_weather_data)
+  
+pothole_fc_exo <- model_df_exo |> 
+  forecast(horizon_data)
+
+fc_exo_acc <- pothole_fc_exo |> 
+  accuracy(pothole_df, measures = list(point_accuracy_measures, distribution_accuracy_measures, skill_crps = skill_score(CRPS))) |> 
+  select(.model, .type, MAPE, RMSSE, skill_crps) |> 
+  arrange(desc(skill_crps))
+
+fc_exo_acc
+
+pothole_fc_exo |> 
+  filter(.id == max(.id)) |> 
+  left_join(fc_exo_acc) |> 
+  mutate(.model = fct_reorder(.model, skill_crps, .desc = TRUE)) |> 
+  autoplot(pothole_cv) +
+  facet_wrap(vars(.model), ncol = 1)
+
+final_exo_model <- pothole_df |> 
+  model(arima_exo_lag3 = ARIMA(log(report_count + 1) ~ temp_avg_lag3 + min_avg_lag3 + max_avg_lag3 + prcp_sum_lag3))
+
+horizon_data_final <- new_data(pothole_df, 12) |> 
+  mutate(month = month(created_yearmonth, label = TRUE)) |> 
+  left_join(new_weather_data)
+
+final_exo_model |> 
+  forecast(horizon_data_final) |> 
+  autoplot(pothole_df)
 
 plan(sequential)
 
