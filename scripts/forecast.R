@@ -33,9 +33,10 @@ weather_data <- weather_data |>
             max_avg = mean(max),
             prcp_sum = sum(prcp)) |> 
   ungroup() |> 
-  mutate(across(where(is.numeric), ~lag(.x, 1), .names = "{.col}_lag1")) |> 
-  mutate(across(where(is.numeric), ~lag(.x, 2), .names = "{.col}_lag2")) |> 
-  mutate(across(where(is.numeric), ~lag(.x, 3), .names = "{.col}_lag3"))
+  mutate(temp_diff = max_avg - min_avg) |> 
+  mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 1), .names = "{.col}_lag1")) |> 
+  mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 2), .names = "{.col}_lag2")) |> 
+  mutate(across(c(min_avg, temp_avg, max_avg, temp_diff, prcp_sum), ~lag(.x, 3), .names = "{.col}_lag3"))
 
 skim(weather_data)
 
@@ -99,6 +100,51 @@ pothole_df |>
   mutate(temp_diff = max_avg - min_avg) |> 
   ggplot(aes(temp_diff, report_count)) +
   geom_point()
+
+pothole_df |> 
+  as_tibble() |> 
+  select(report_count, contains("temp")) |> 
+  pivot_longer(contains("temp")) |> 
+  ggplot(aes(value, report_count)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(vars(name), scales = "free")
+
+pothole_df |> 
+  as_tibble() |> 
+  select(report_count, contains("min")) |> 
+  pivot_longer(contains("min")) |> 
+  ggplot(aes(value, report_count)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(vars(name), scales = "free")
+
+pothole_df |> 
+  as_tibble() |> 
+  select(report_count, contains("max")) |> 
+  pivot_longer(contains("max")) |> 
+  ggplot(aes(value, report_count)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(vars(name), scales = "free")
+
+pothole_df |> 
+  as_tibble() |> 
+  select(report_count, contains("prcp")) |> 
+  pivot_longer(contains("prcp")) |> 
+  ggplot(aes(value, report_count)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(vars(name), scales = "free")
+
+pothole_df |> 
+  as_tibble() |> 
+  select(report_count, contains("diff")) |> 
+  pivot_longer(contains("diff")) |> 
+  ggplot(aes(value, report_count)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(vars(name), scales = "free")
 
 #split into train/test and forecast
 data_test <- pothole_df |> 
