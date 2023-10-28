@@ -2,6 +2,8 @@ library(tidyverse)
 library(GSODR)
 library(janitor)
 
+load(system.file("extdata", "isd_history.rda", package = "GSODR"))
+
 isd_history |> 
   count(COUNTRY_NAME, sort = TRUE)
 
@@ -12,18 +14,19 @@ local_stations <- isd_history |>
 
 local_stations
 
-tbar <- get_GSOD(years = c(2022:2023), station = "725205-14762") |> 
+tbar <- get_GSOD(years = c(2014:2023), station = "725205-14762") |> 
   as_tibble() |> 
   clean_names()
 
 glimpse(tbar)
 
 tbar_subset <- tbar |> 
-  select(stnid, name, date = yearmoda, min, temp, max, prcp, sndp)
+  select(stnid, name, date = yearmoda, min, temp, max, prcp, sndp) |> 
+  mutate(max_min_diff = max - min)
 
 tbar_subset |> 
-  ggplot(aes(YEARMODA, TEMP)) +
-  geom_ribbon(aes(ymin = MIN, ymax = MAX), alpha = .3) +
+  ggplot(aes(date, temp)) +
+  geom_ribbon(aes(ymin = min, ymax = max), alpha = .3) +
   geom_line()
 
 tbar_subset |> 
@@ -39,7 +42,13 @@ tbar_subset |>
   geom_line()
 
 tbar_subset |> 
-  count(SNDP)
+  count(sndp)
+
+tbar_subset |> 
+  ggplot(aes(temp, prcp)) +
+  geom_point() +
+  geom_vline(xintercept = 0) +
+  facet_wrap(vars(year(date)))
 
 tbar_subset |> 
   select(-sndp) |> 
