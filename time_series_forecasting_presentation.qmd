@@ -1,0 +1,132 @@
+---
+title: "Time Series Forecasting In R"
+author: "Conor Tompkins"
+format:
+  revealjs:
+    embed-resources: true
+editor: visual
+---
+
+## What is time series forecasting?
+
+Time series forecasting is the practice of making predictions about the future value of some quantitative variable.
+
+Forecast accuracy is typically the focus, not inference.
+
+## What is a time series?
+
+Data collected about a quantitative variable sequentially over time.
+
+-   Customer demand for a company's product
+
+-   Price of electricity
+
+-   Stock price
+
+-   Pothole complaints
+
+## What can be forecast?
+
+Factors include:
+
+1.  how well we understand the factors that contribute to it;
+
+2.  how much data is available;
+
+3.  how similar the future is to the past;
+
+4.  whether the forecasts can affect the thing we are trying to forecast.
+
+## Why forecast?
+
+Improve decision making about the future.
+
+Examples
+
+1.  a
+
+2.  b
+
+3.  c
+
+## Forecast horizons
+
+-   Short term
+
+    -   How many clerks will a grocery store need tomorrow?
+
+-   Medium term
+
+    -   How many flowers will the flower shop need to buy to fulfill demand for Valentine's Day?
+
+-   Long term
+
+    -   How many retail stores will a company need to open to meet future demand given changing population trends across geography?
+
+## How?
+
+#### Typical regression model
+
+Pothole complaints as a function of explanatory variables
+
+```{r}
+#| eval: false
+#| echo: true
+pothole_complaints ~ year + month + weather + public_works_budget + error
+```
+
+#### Time series model
+
+Future value of pothole complaints as a function of the previous values of pothole complaints (plus explanatory variables)
+
+```{r}
+#| eval: false
+#| echo: true
+pothole_complaints(t+1) ~ pothole_complaints(t) + pothole_complaints(t-1) + pothole_complaints(t-2) + ... + error
+```
+
+## Forecasting Process
+
+1.  Exploratory data analysis
+
+2.  Model selection
+
+3.  Forecast
+
+4.  Evaluate forecast accuracy
+
+## Pothole walkthrough
+
+Read in the data
+
+## Pothole walkthrough
+
+Data structure
+
+## Pothole walkthrough
+
+Split 80/20 train/test
+
+## Exploratory data analysis
+
+Basic time series plot
+
+## Exploratory data analysis
+
+Decomposition
+
+## Model selection
+
+Explain various basic models
+
+## Forecast
+
+## Evaluate forecast accuracy
+
+## Appendix
+
+Cross-validation
+
+## Appendix
+
+Exogenous variables
