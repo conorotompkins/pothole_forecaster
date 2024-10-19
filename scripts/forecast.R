@@ -5,6 +5,7 @@ library(future)
 library(tictoc)
 library(hrbrthemes)
 library(skimr)
+library(usethis)
 
 theme_set(theme_ipsum())
 
