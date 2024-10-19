@@ -39,3 +39,5 @@ vignettes/*.pdf
 .Renviron
 
 inputs
+
+time_series_forecasting_presentation.html
