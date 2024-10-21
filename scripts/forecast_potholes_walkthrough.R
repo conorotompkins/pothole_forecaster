@@ -25,6 +25,7 @@ pothole_df <- report_data |>
   summarize(report_count = n(),
             .by = c(create_date, request_type)) |> 
   ungroup() |>
+  filter(year(create_date) >= 2016) |> 
   as_tsibble(key = request_type, index = create_date)
 
 pothole_df
@@ -135,7 +136,7 @@ pothole_fc |>
   guides(fill_ramp = "none",
          fill = "none",
          color = "none") +
-  labs(title = "Forecasts by model",
+  labs(title = "Top 3 forecasts by model",
        subtitle = "Sorted descending by accuracy")
 
 ##inspect model
