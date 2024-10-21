@@ -14,17 +14,18 @@ set.seed(1234)
 
 #read in pothole data
 #https://data.wprdc.org/datastore/dump/29462525-62a6-45bf-9b5e-ad2e1c06348d
-pothole_data <- read_csv("inputs/wprdc_311.csv") |> 
-  clean_names() |> 
-  filter(request_type == "Potholes") |> 
-  mutate(created_yearmonth = yearmonth(created_on))
+report_data <- read_csv("inputs/wprdc_311_2024_10_20.csv") |> 
+  clean_names() |>
+  mutate(create_date = yearmonth(create_date_et)) |> 
+  rename(request_type = request_type_name)
 
 #create basic tsibble
-pothole_df <- pothole_data |> 
-  group_by(created_yearmonth, request_type) |> 
-  summarize(report_count = n()) |> 
+pothole_df <- report_data |> 
+  filter(request_type == "Potholes") |> 
+  summarize(report_count = n(),
+            .by = c(create_date, request_type)) |> 
   ungroup() |>
-  as_tsibble()
+  as_tsibble(key = request_type, index = create_date)
 
 pothole_df
 
@@ -37,7 +38,7 @@ autoplot(pothole_df)
 gg_season(pothole_df)
 
 gg_subseries(pothole_df) +
-  facet_wrap(vars(month(created_yearmonth, label = TRUE)))
+  facet_wrap(vars(month(create_date, label = TRUE)), ncol = 3)
 
 ##decomposition
 
@@ -60,10 +61,10 @@ outliers <- dcmp_components |>
   )
 
 outliers |> 
-  select(created_yearmonth, remainder)
+  select(create_date, remainder)
 
 pothole_df |>
-  ggplot(aes(created_yearmonth, report_count)) +
+  ggplot(aes(create_date, report_count)) +
   geom_line() +
   geom_point(data = outliers, color = "red")
 
@@ -74,14 +75,22 @@ data_test <- pothole_df |>
   slice_tail(prop = .2)
 
 data_train <- pothole_df |> 
-  anti_join(data_test, by = "created_yearmonth")
+  anti_join(data_test, by = "create_date")
 
 ##create models
 
 model_df <- data_train |> 
-  model(arima = ARIMA(log(report_count + 1)),
-        ets = ETS(log(report_count + 1)),
-        lm_seasonal = TSLM(log(report_count + 1) ~ trend() + season()))
+  model(naive = NAIVE(log(report_count + 1)),
+        naive_seasonal = SNAIVE(log(report_count + 1)),
+        mean = MEAN(log(report_count + 1)),
+        mean_moving_6 = MEAN(log(report_count + 1), window = 6),
+        mean_moving_12 = MEAN(log(report_count + 1), window = 12),
+        lm = TSLM(log(report_count + 1) ~ trend()),
+        lm_seasonal = TSLM(log(report_count + 1) ~ trend() + season()),
+        arima = ARIMA(log(report_count + 1)),
+        ets = ETS(log(report_count + 1)))
+
+model_df
 
 pothole_fc <- model_df |> 
   forecast(data_test)
@@ -93,15 +102,41 @@ pothole_fc
 fc_acc <- pothole_fc |> 
   accuracy(pothole_df,
            measures = list(point_accuracy_measures, distribution_accuracy_measures, skill_cprs = skill_score(CRPS))) |> 
-  select(.model, .type, skill_cprs, RMSE) |> 
+  select(request_type, .model, .type, skill_cprs, RMSE) |> 
+  rename(rmse = RMSE) |> 
   arrange(desc(skill_cprs))
 
 fc_acc
 
+fc_acc |> 
+  ggplot(aes(x = skill_cprs, y = rmse, label = .model)) +
+  geom_label() +
+  scale_x_continuous(expand = expansion(mult = c(.1, .1))) +
+  scale_y_reverse()
+
+model_acc <- fc_acc |> 
+  pull(.model)
+
 pothole_fc |> 
-  autoplot(pothole_df |> 
-             filter(year(created_yearmonth) >= 2021)) +
-  facet_wrap(vars(.model), scales = "free_y", ncol = 1)
+  mutate(.model = factor(.model, levels = model_acc)) |> 
+  autoplot(data = pothole_df |> filter(year(create_date) >= 2021)) +
+  facet_wrap(vars(.model), scales = "free_y", ncol = 2) +
+  guides(fill_ramp = "none",
+         fill = "none",
+         color = "none") +
+  labs(title = "Forecasts by model",
+       subtitle = "Sorted descending by accuracy")
+
+pothole_fc |> 
+  mutate(.model = factor(.model, levels = model_acc)) |> 
+  filter(.model %in% model_acc[1:3]) |> 
+  autoplot(data = pothole_df |> filter(year(create_date) >= 2021)) +
+  facet_wrap(vars(.model), scales = "free_y", ncol = 1) +
+  guides(fill_ramp = "none",
+         fill = "none",
+         color = "none") +
+  labs(title = "Forecasts by model",
+       subtitle = "Sorted descending by accuracy")
 
 ##inspect model
 
@@ -111,10 +146,87 @@ model_df |>
 
 ##final forecast
 
-final_model <- model_df |> 
-  select(lm_seasonal) |> 
-  refit(pothole_df, reestimate = TRUE)
+# final_model <- model_df |> 
+#   select(lm_seasonal) |> 
+#   refit(pothole_df, reestimate = TRUE)
+final_model <- pothole_df |> 
+  model(lm_seasonal = TSLM(log(report_count + 1) ~ trend() + season()))
 
 final_model |> 
   forecast(h = 12) |> 
-  autoplot(pothole_df)
+  autoplot(pothole_df) +
+  labs(title = "Final 12 month forecast of pothole complaints",
+       x = "Report create date",
+       y = "Report count")
+
+##extract from forecast distribution
+final_model |> 
+  forecast(h = 12) |> 
+  mutate(fc_hilo = hilo(report_count, level = .95),
+         fc_upper = fc_hilo$upper,
+         fc_lower = fc_hilo$lower)
+
+## forecast multiple time series
+report_data |> 
+  count(request_type, sort = TRUE)
+
+report_df <- report_data |> 
+  filter(request_type %in% c("Potholes", "Weeds/Debris")) |> 
+  summarize(report_count = n(),
+            .by = c(create_date, request_type)) |> 
+  ungroup() |>
+  filter(year(create_date) >= 2016) |> 
+  as_tsibble(key = request_type, index = create_date)
+
+autoplot(report_df)
+
+gg_season(report_df)
+
+gg_subseries(report_df)
+
+report_test <- report_df |> 
+  group_by(request_type) |> 
+  slice_tail(prop = .2) |> 
+  ungroup()
+
+report_train <- anti_join(report_df, report_test, by = c("create_date", "request_type"))
+
+report_models <- report_train |> 
+  model(naive = NAIVE(log(report_count + 1)),
+        naive_seasonal = SNAIVE(log(report_count + 1)),
+        mean = MEAN(log(report_count + 1)),
+        mean_moving_6 = MEAN(log(report_count + 1), window = 6),
+        mean_moving_12 = MEAN(log(report_count + 1), window = 12),
+        lm = TSLM(log(report_count + 1) ~ trend()),
+        lm_seasonal = TSLM(log(report_count + 1) ~ trend() + season()),
+        arima = ARIMA(log(report_count + 1)),
+        ets = ETS(log(report_count + 1)))
+
+report_fc <- report_models |> 
+  forecast(report_test)
+
+##fc accuracy
+fc_acc_report <- report_fc |> 
+  accuracy(report_df,
+           measures = list(point_accuracy_measures, distribution_accuracy_measures, skill_cprs = skill_score(CRPS))) |> 
+  select(request_type, .model, .type, skill_cprs, RMSE) |> 
+  rename(rmse = RMSE) |> 
+  arrange(request_type, desc(skill_cprs))
+
+fc_acc_report
+
+top_models <- fc_acc_report |> 
+  group_by(request_type) |> 
+  slice_head(n = 1) |> 
+  ungroup() |> 
+  select(request_type, .model)
+
+top_models
+
+report_models |> 
+  select(request_type, lm_seasonal, naive_seasonal) |> 
+  refit(report_df, reestimate = TRUE) |> 
+  forecast(h = 12) |> 
+  semi_join(top_models) |> 
+  autoplot(report_df) +
+  facet_wrap(vars(request_type), ncol = 1, scales = "free_y")
