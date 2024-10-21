@@ -27,27 +27,27 @@ Data collected about a quantitative variable sequentially over time.
 
 ## What can be forecast?
 
-Factors include:
+Variables that affect forecastability:
 
-1.  how well we understand the factors that contribute to it;
+1.  Do we understand the underlying process that creates the time series (data generating process)?
 
-2.  how much data is available;
+2.  Is historical data is available?
 
-3.  how similar the future is to the past;
+3.  Will the future be similar to the past?
 
-4.  whether the forecasts can affect the thing we are trying to forecast.
+4.  Will the forecast affect the thing we are trying to forecast?
+
+## What can be forecast?
+
+"How much will it rain tomorrow"
+
+vs.
+
+"How much rain will fall on you tomorrow"
 
 ## Why forecast?
 
 Improve decision making about the future.
-
-Examples
-
-1.  a
-
-2.  b
-
-3.  c
 
 ## Forecast horizons
 
@@ -61,7 +61,7 @@ Examples
 
 -   Long term
 
-    -   How many retail stores will a company need to open to meet future demand given changing population trends across geography?
+    -   How many retail stores will a company need to meet future demand given changing population trends across geography?
 
 ## How?
 
@@ -115,13 +115,21 @@ Basic time series plot
 
 Decomposition
 
-## Model selection
+## Modelling
+
+Train/test split
+
+## Modelling
 
 Explain various basic models
 
-## Forecast
+## Modelling
 
-## Evaluate forecast accuracy
+Forecast
+
+## Modelling
+
+Evaluate forecast accuracy
 
 ## Appendix
 
