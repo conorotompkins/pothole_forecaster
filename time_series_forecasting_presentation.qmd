@@ -25,9 +25,11 @@ Data collected about a quantitative variable sequentially over time.
 
 -   Pothole complaints
 
+Miniature graph of a time series goes here
+
 ## What can be forecast?
 
-Variables that affect forecastability:
+Forecastability is determined by:
 
 1.  Do we understand the underlying process that creates the time series (data generating process)?
 
@@ -37,23 +39,27 @@ Variables that affect forecastability:
 
 4.  Will the forecast affect the thing we are trying to forecast?
 
+    -   Feedback loop
+
 ## What can be forecast?
 
-"How much will it rain tomorrow"
+> "How much will it rain tomorrow"
 
 vs.
 
-"How much rain will fall on you tomorrow"
+> "How much rain will fall on you tomorrow"
 
 ## Why forecast?
 
-Improve decision making about the future.
+-   Improve decision making about the future.
+
+-   Typically related to resource allocation.
 
 ## Forecast horizons
 
 -   Short term
 
-    -   How many clerks will a grocery store need tomorrow?
+    -   What will be the peak demand for electricity be in the next hour?
 
 -   Medium term
 
@@ -61,7 +67,7 @@ Improve decision making about the future.
 
 -   Long term
 
-    -   How many retail stores will a company need to meet future demand given changing population trends across geography?
+    -   What will future demand for a company's products be given changing population trends across geography?
 
 ## How?
 
