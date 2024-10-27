@@ -1,5 +1,5 @@
 library(fpp3)
-library(tidyverse)
+library(readr)
 library(janitor)
 library(future)
 library(hrbrthemes)
@@ -56,10 +56,8 @@ dcmp_components |>
 ##outlier analysis
 
 outliers <- dcmp_components |>
-  filter(
-    remainder < quantile(remainder, 0.25) - 3*IQR(remainder) |
-      remainder > quantile(remainder, 0.75) + 3*IQR(remainder)
-  )
+  filter(remainder < quantile(remainder, 0.25) - 3*IQR(remainder) |
+           remainder > quantile(remainder, 0.75) + 3*IQR(remainder))
 
 outliers |> 
   select(create_date, remainder)
@@ -72,6 +70,8 @@ pothole_df |>
 #modeling
 
 ##split into train/test and forecast
+##use last 20% of observations as test set
+
 data_test <- pothole_df |> 
   slice_tail(prop = .2)
 
@@ -93,6 +93,8 @@ model_df <- data_train |>
 
 model_df
 
+##make test forecast
+
 pothole_fc <- model_df |> 
   forecast(data_test)
 
@@ -103,8 +105,8 @@ pothole_fc
 fc_acc <- pothole_fc |> 
   accuracy(pothole_df,
            measures = list(point_accuracy_measures, distribution_accuracy_measures, skill_cprs = skill_score(CRPS))) |> 
-  select(request_type, .model, .type, skill_cprs, RMSE) |> 
   rename(rmse = RMSE) |> 
+  select(request_type, .model, .type, skill_cprs, rmse) |> 
   arrange(desc(skill_cprs))
 
 fc_acc
@@ -118,8 +120,10 @@ fc_acc |>
 model_acc <- fc_acc |> 
   pull(.model)
 
-pothole_fc |> 
-  mutate(.model = factor(.model, levels = model_acc)) |> 
+pothole_fc <- pothole_fc |> 
+  mutate(.model = factor(.model, levels = model_acc))
+  
+pothole_fc |>  
   autoplot(data = pothole_df |> filter(year(create_date) >= 2021)) +
   facet_wrap(vars(.model), scales = "free_y", ncol = 2) +
   guides(fill_ramp = "none",
@@ -147,8 +151,8 @@ model_df |>
 
 ##final forecast
 
-# final_model <- model_df |> 
-#   select(lm_seasonal) |> 
+# final_model <- model_df |>
+#   select(lm_seasonal) |>
 #   refit(pothole_df, reestimate = TRUE)
 final_model <- pothole_df |> 
   model(lm_seasonal = TSLM(log(report_count + 1) ~ trend() + season()))

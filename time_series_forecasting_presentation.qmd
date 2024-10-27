@@ -105,37 +105,258 @@ pothole_complaints(t+1) ~ pothole_complaints(t) + pothole_complaints(t-1) + poth
 
 Read in the data
 
-## Pothole walkthrough
+```{r}
+library(fpp3)
+library(readr)
+library(janitor)
+library(future)
 
-Data structure
+custom_theme <- theme_bw() + 
+  theme(axis.text = element_text(size = 14),
+        axis.title = element_text(size = 18))
 
-## Pothole walkthrough
+theme_set(custom_theme)
 
-Split 80/20 train/test
+plan(multisession)
+
+options(scipen = 999, digits = 4)
+
+set.seed(1234)
+
+#read in pothole data
+#https://data.wprdc.org/datastore/dump/29462525-62a6-45bf-9b5e-ad2e1c06348d
+report_data <- read_csv("inputs/wprdc_311_2024_10_20.csv") |> 
+  clean_names() |>
+  mutate(create_date = yearmonth(create_date_et)) |> 
+  rename(request_type = request_type_name)
+```
+
+## Pothole walkthrough {.smaller}
+
+::::: columns
+::: {.column width="50%"}
+Time series table `({tsibble})` data structure:
+
+-   Key: `request_type`
+
+-   Index: `create_date`
+
+-   Measured variable: `report_count`
+:::
+
+::: {.column width="50%"}
+```{r}
+#create basic tsibble
+pothole_df <- report_data |> 
+  filter(request_type == "Potholes") |> 
+  summarize(report_count = n(),
+            .by = c(create_date, request_type)) |> 
+  ungroup() |>
+  filter(year(create_date) >= 2016) |> 
+  as_tsibble(key = request_type, index = create_date)
+
+pothole_df
+```
+:::
+:::::
 
 ## Exploratory data analysis
 
-Basic time series plot
+```{r}
+autoplot(pothole_df)
+```
 
 ## Exploratory data analysis
 
-Decomposition
+Seasonal plot showing each month across years
+
+```{r}
+gg_season(pothole_df)
+```
+
+## Exploratory data analysis
+
+Seasonal subseries plot
+
+```{r}
+gg_subseries(pothole_df) +
+  facet_wrap(vars(month(create_date, label = TRUE)), ncol = 3)
+```
+
+## Exploratory data analysis
+
+Time series decomposition
+
+```{r}
+dcmp <- pothole_df |>
+  model(stl = STL(report_count, robust = TRUE))
+
+dcmp_components <- components(dcmp)
+
+autoplot(dcmp_components)
+```
+
+## Exploratory data analysis
+
+Outliers
+
+```{r}
+outliers <- dcmp_components |>
+  filter(remainder < quantile(remainder, 0.25) - 3*IQR(remainder) |
+           remainder > quantile(remainder, 0.75) + 3*IQR(remainder))
+
+pothole_df |>
+  ggplot(aes(create_date, report_count)) +
+  geom_line() +
+  geom_point(data = outliers, color = "red")
+```
 
 ## Modelling
 
-Train/test split
+-   Train/test split
+
+-   Use last 20% of observations as test data
+
+```{r}
+#| echo: true
+data_test <- pothole_df |> 
+  slice_tail(prop = .2)
+
+data_train <- pothole_df |> 
+  anti_join(data_test, by = "create_date")
+```
+
+## Modelling {.smaller}
+
+::::: columns
+::: column
+-   NAIVE : play the last value forward over the forecast horizon
+
+-   SNAIVE: play the last seasonal value forward
+
+-   MEAN : take the average of the entire series and play it forward
+
+    -   Use `window()` to apply a window for moving averages
+:::
+
+::: column
+-   `TSLM` : fit a linear model
+
+    -   Use `seasonal() to add`dummy variables for seasonal effects
+
+-   ETS : weighted average based on recency of observation
+
+-   ARIMA :
+:::
+:::::
 
 ## Modelling
 
-Explain various basic models
+Fit models on training data
+
+```{r}
+model_df <- data_train |> 
+  model(naive = NAIVE(log(report_count + 1)),
+        naive_seasonal = SNAIVE(log(report_count + 1)),
+        mean = MEAN(log(report_count + 1)),
+        mean_moving_6 = MEAN(log(report_count + 1), window = 6),
+        mean_moving_12 = MEAN(log(report_count + 1), window = 12),
+        lm = TSLM(log(report_count + 1) ~ trend()),
+        lm_seasonal = TSLM(log(report_count + 1) ~ trend() + season()),
+        arima = ARIMA(log(report_count + 1)),
+        ets = ETS(log(report_count + 1)))
+
+model_df
+```
 
 ## Modelling
 
-Forecast
+Make forecast from fit models
+
+```{r}
+pothole_fc <- model_df |> 
+  forecast(data_test)
+
+pothole_fc
+```
 
 ## Modelling
 
-Evaluate forecast accuracy
+-   Metrics:
+
+    -   Root Mean Squared Error (RMSE)
+
+    -   Continuous Ranked Probability Score (CRPS)
+
+        -   Measures how well the forecast distribution fits the test data
+
+        -   "skill" measures CRPS compared to a naive benchmark model
+
+    -   Others available in `{fabletools}`
+
+## Modelling
+
+Evaluate forecast accuracy based on full time series (train + test)
+
+```{r}
+fc_acc <- pothole_fc |> 
+  accuracy(pothole_df,
+           measures = list(point_accuracy_measures, distribution_accuracy_measures, skill_cprs = skill_score(CRPS))) |> 
+  rename(rmse = RMSE) |> 
+  select(request_type, .model, .type, skill_cprs, rmse) |> 
+  arrange(desc(skill_cprs))
+
+fc_acc
+```
+
+## Modelling
+
+Plot forecast vs test data
+
+```{r}
+model_acc <- fc_acc |> 
+  pull(.model)
+
+pothole_fc <- pothole_fc |> 
+  mutate(.model = factor(.model, levels = model_acc))
+
+pothole_fc |> 
+  mutate(.model = factor(.model, levels = model_acc)) |> 
+  filter(.model %in% model_acc[1:3]) |> 
+  autoplot(data = pothole_df |> filter(year(create_date) >= 2021)) +
+  facet_wrap(vars(.model), scales = "free_y", ncol = 1) +
+  guides(fill_ramp = "none",
+         fill = "none",
+         color = "none") +
+  labs(title = "Top 3 forecasts by model",
+       subtitle = "Sorted descending by accuracy")
+```
+
+## Modelling
+
+Inspect top model
+
+```{r}
+model_df |> 
+  select(lm_seasonal) |> 
+  report()
+```
+
+## Modelling
+
+Refit top model on entire time series and make a true 12 month forecast
+
+```{r}
+final_model <- pothole_df |> 
+  model(lm_seasonal = TSLM(log(report_count + 1) ~ trend() + season()))
+
+final_model |> 
+  forecast(h = 12) |> 
+  autoplot(pothole_df |> filter(year(create_date) >= 2021)) +
+  labs(title = "Final 12 month forecast of pothole complaints",
+       x = "Report create date",
+       y = "Report count")
+```
 
 ## Appendix
 
