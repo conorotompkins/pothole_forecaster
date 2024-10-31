@@ -171,6 +171,12 @@ final_model |>
          fc_upper = fc_hilo$upper,
          fc_lower = fc_hilo$lower)
 
+##cross-validation
+pothole_cv <- stretch_tsibble(pothole_df, .step = 6, .init = 24)
+
+pothole_cv |> 
+  count(.id)
+
 ## forecast multiple time series
 report_data |> 
   count(request_type, sort = TRUE)
