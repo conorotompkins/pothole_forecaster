@@ -23,7 +23,7 @@ Data collected about a quantitative variable sequentially over time.
 
 -   Stock price
 
--   Pothole complaints
+-   Pothole reports
 
 Miniature graph of a time series goes here
 
@@ -63,7 +63,7 @@ vs.
 
 -   Medium term
 
-    -   How many flowers will the flower shop need to buy to fulfill demand for Valentine's Day?
+    -   What will customer demand for flowers be next Valentine's Day?
 
 -   Long term
 
@@ -73,12 +73,12 @@ vs.
 
 #### Typical regression model
 
-Pothole complaints as a function of explanatory variables
+Pothole reports as a function of explanatory variables
 
 ```{r}
 #| eval: false
 #| echo: true
-pothole_complaints ~ year + month + weather + public_works_budget + error
+pothole_reports ~ year + month + weather + public_works_budget + error
 ```
 
 #### Time series model
@@ -88,7 +88,7 @@ Future value of pothole complaints as a function of the previous values of potho
 ```{r}
 #| eval: false
 #| echo: true
-pothole_complaints(t+1) ~ pothole_complaints(t) + pothole_complaints(t-1) + pothole_complaints(t-2) + ... + error
+pothole_reports(t+1) ~ pothole_reports(t) + pothole_reports(t-1) + pothole_reports(t-2) + ... + error
 ```
 
 ## Forecasting Process
@@ -101,9 +101,7 @@ pothole_complaints(t+1) ~ pothole_complaints(t) + pothole_complaints(t-1) + poth
 
 4.  Evaluate forecast accuracy
 
-## Pothole walkthrough
-
-Read in the data
+## Code walkthrough
 
 ```{r}
 library(fpp3)
@@ -122,7 +120,9 @@ plan(multisession)
 options(scipen = 999, digits = 4)
 
 set.seed(1234)
+```
 
+```{r}
 #read in pothole data
 #https://data.wprdc.org/datastore/dump/29462525-62a6-45bf-9b5e-ad2e1c06348d
 report_data <- read_csv("inputs/wprdc_311_2024_10_20.csv") |> 
@@ -131,7 +131,7 @@ report_data <- read_csv("inputs/wprdc_311_2024_10_20.csv") |>
   rename(request_type = request_type_name)
 ```
 
-## Pothole walkthrough {.smaller}
+## Data structure {.smaller}
 
 ::::: columns
 ::: {.column width="50%"}
@@ -168,7 +168,7 @@ autoplot(pothole_df)
 
 ## Exploratory data analysis
 
-Seasonal plot showing each month across years
+Seasonal plot shows each year across months
 
 ```{r}
 gg_season(pothole_df)
@@ -176,7 +176,7 @@ gg_season(pothole_df)
 
 ## Exploratory data analysis
 
-Seasonal subseries plot
+Seasonal subseries plot shows each month across years
 
 ```{r}
 gg_subseries(pothole_df) +
@@ -228,27 +228,29 @@ data_train <- pothole_df |>
 
 ## Modelling {.smaller}
 
-::::: columns
-::: column
--   NAIVE : play the last value forward over the forecast horizon
+-   NAIVE: play the last value forward over the forecast horizon
 
 -   SNAIVE: play the last seasonal value forward
 
--   MEAN : take the average of the entire series and play it forward
+-   MEAN: take the average of the entire series and play it forward
 
     -   Use `window()` to apply a window for moving averages
-:::
 
-::: column
--   `TSLM` : fit a linear model
+## Modelling {.smaller}
 
-    -   Use `seasonal() to add`dummy variables for seasonal effects
+-   TSLM\*: fit a linear model
 
--   ETS : weighted average based on recency of observation
+    -   Use `seasonal()` to add dummy variables for seasonal effects
 
--   ARIMA :
-:::
-:::::
+-   ETS: **e**xponen**t**ial **s**moothing using a weighted average based on the recency of the observations
+
+-   ARIMA\*: **A**uto**r**egressive **I**ntegrated **M**oving **A**verage
+
+    -   Automatically determines optimal model parameters (PDQ, seasonal PDQ)
+
+        -   AKA "autoarima"
+
+    -   You can manually set these
 
 ## Modelling
 
@@ -280,19 +282,21 @@ pothole_fc <- model_df |>
 pothole_fc
 ```
 
-## Modelling
+## Modelling {.smaller}
 
--   Metrics:
+Accuracy metrics
 
-    -   Root Mean Squared Error (RMSE)
+-   Root Mean Squared Error (RMSE)
 
-    -   Continuous Ranked Probability Score (CRPS)
+    -   On average, how far off the forecast is from the actual observed value
 
-        -   Measures how well the forecast distribution fits the test data
+-   Continuous Ranked Probability Score (CRPS)
 
-        -   "skill" measures CRPS compared to a naive benchmark model
+    -   Measures how well the forecast distribution fits the test data
 
-    -   Others available in `{fabletools}`
+    -   "skill" measures CRPS compared to a naive benchmark model
+
+-   Others available in `{fabletools}`
 
 ## Modelling
 
@@ -311,7 +315,22 @@ fc_acc
 
 ## Modelling
 
-Plot forecast vs test data
+Plot forecast vs. training data
+
+```{r}
+model_df |> 
+  select(ets) |> 
+  augment() |> 
+  ggplot(aes(x = create_date)) +
+  geom_line(aes(y = report_count, color = "observed")) +
+  geom_line(aes(y = .fitted, color = "prediction")) +
+  scale_color_manual(values = c("observed" = "black", "prediction" = "orange")) +
+  labs(color = NULL)
+```
+
+## Modelling
+
+Plot forecast vs. test data
 
 ```{r}
 model_acc <- fc_acc |> 
@@ -324,7 +343,7 @@ pothole_fc |>
   mutate(.model = factor(.model, levels = model_acc)) |> 
   filter(.model %in% model_acc[1:3]) |> 
   autoplot(data = pothole_df |> filter(year(create_date) >= 2021)) +
-  facet_wrap(vars(.model), scales = "free_y", ncol = 1) +
+  facet_wrap(vars(.model), ncol = 1) +
   guides(fill_ramp = "none",
          fill = "none",
          color = "none") +
@@ -353,7 +372,7 @@ final_model <- pothole_df |>
 final_model |> 
   forecast(h = 12) |> 
   autoplot(pothole_df |> filter(year(create_date) >= 2021)) +
-  labs(title = "Final 12 month forecast of pothole complaints",
+  labs(title = "Final 12 month forecast of pothole reports",
        x = "Report create date",
        y = "Report count")
 ```
@@ -362,6 +381,16 @@ final_model |>
 
 Cross-validation
 
-## Appendix
+Create multiple train/test sets with rolling origins
 
-Exogenous variables
+```{r}
+#| echo: true
+
+pothole_cv <- stretch_tsibble(pothole_df, .step = 6, .init = 24)
+
+pothole_cv
+```
+
+## Cross-validation
+
+[![Forecasting: Principles and Practice](https://otexts.com/fpp3/fpp_files/figure-html/cv1-1.png)](https://otexts.com/fpp3/tscv.html)
