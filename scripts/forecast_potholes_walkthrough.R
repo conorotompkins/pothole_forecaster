@@ -3,6 +3,9 @@ library(readr)
 library(janitor)
 library(future)
 library(hrbrthemes)
+library(forcats)
+library(broom)
+library(ggrepel)
 
 theme_set(theme_ipsum())
 
@@ -182,25 +185,28 @@ report_data |>
   count(request_type, sort = TRUE)
 
 report_df <- report_data |> 
-  filter(request_type %in% c("Potholes", "Weeds/Debris")) |> 
   summarize(report_count = n(),
             .by = c(create_date, request_type)) |> 
   ungroup() |>
-  filter(year(create_date) >= 2016) |> 
+  filter(year(create_date) >= 2016,
+         create_date < yearmonth("2024 Nov")) |> 
   as_tsibble(key = request_type, index = create_date)
 
-autoplot(report_df)
+report_df_top2 <- report_df |> 
+  filter(request_type %in% c("Potholes", "Weeds/Debris"))
 
-gg_season(report_df)
+autoplot(report_df_top2)
 
-gg_subseries(report_df)
+gg_season(report_df_top2)
 
-report_test <- report_df |> 
+gg_subseries(report_df_top2)
+
+report_test <- report_df_top2 |> 
   group_by(request_type) |> 
   slice_tail(prop = .2) |> 
   ungroup()
 
-report_train <- anti_join(report_df, report_test, by = c("create_date", "request_type"))
+report_train <- anti_join(report_df_top2, report_test, by = c("create_date", "request_type"))
 
 report_models <- report_train |> 
   model(naive = NAIVE(log(report_count + 1)),
@@ -215,6 +221,44 @@ report_models <- report_train |>
 
 report_fc <- report_models |> 
   forecast(report_test)
+
+report_fc
+
+##time series features
+
+top_request_type <- report_df |> 
+  as_tibble() |> 
+  summarize(report_count = sum(report_count),
+            .by = c(request_type)) |> 
+  slice_max(n = 10, order_by = report_count)
+
+report_df_top10 <- report_df |> 
+  semi_join(top_request_type, by = "request_type")
+
+report_df_top10 |> 
+  mutate(request_type = forcats::fct_reorder(request_type, report_count, sum, .desc = TRUE)) |> 
+  autoplot() +
+  facet_wrap(vars(request_type), scales = "free_y") +
+  guides(color = "none")
+
+report_features <- report_df_top10 |> 
+  features(report_count, feature_set(pkgs = "feasts"))
+
+glimpse(report_features)
+
+pcs <- report_features |>
+  select(-request_type, -contains("zero")) |>
+  prcomp(scale = TRUE) |>
+  augment(report_features)
+
+pcs |>
+  ggplot(aes(x = .fittedPC1, y = .fittedPC2, col = request_type)) +
+  geom_point() +
+  geom_label_repel(aes(label = request_type)) +
+  scale_x_continuous(expand = expansion(mult = c(.2, .2))) +
+  scale_y_continuous(expand = expansion(mult = c(.2, .2))) +
+  theme(aspect.ratio = 1) +
+  guides(color = "none")
 
 ##fc accuracy
 fc_acc_report <- report_fc |> 
