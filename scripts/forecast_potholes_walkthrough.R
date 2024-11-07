@@ -1,3 +1,5 @@
+#install.packages(c("fpp3", "readr", "janitor", "future", "hrbrthemes", "forcats", "broom", "ggrepel"), dependencies = TRUE)
+
 library(fpp3)
 library(readr)
 library(janitor)
@@ -20,7 +22,8 @@ set.seed(1234)
 report_data <- read_csv("inputs/wprdc_311_2024_10_20.csv") |> 
   clean_names() |>
   mutate(create_date = yearmonth(create_date_et)) |> 
-  rename(request_type = request_type_name)
+  rename(request_type = request_type_name) |> 
+  filter(create_date < yearmonth("2024 Nov"))
 
 #create basic tsibble
 pothole_df <- report_data |> 
@@ -88,7 +91,6 @@ model_df <- data_train |>
         naive_seasonal = SNAIVE(log(report_count + 1)),
         mean = MEAN(log(report_count + 1)),
         mean_moving_6 = MEAN(log(report_count + 1), window = 6),
-        mean_moving_12 = MEAN(log(report_count + 1), window = 12),
         lm = TSLM(log(report_count + 1) ~ trend()),
         lm_seasonal = TSLM(log(report_count + 1) ~ trend() + season()),
         arima = ARIMA(log(report_count + 1)),
@@ -116,7 +118,8 @@ fc_acc
 
 fc_acc |> 
   ggplot(aes(x = skill_cprs, y = rmse, label = .model)) +
-  geom_label() +
+  geom_point() +
+  geom_label_repel() +
   scale_x_continuous(expand = expansion(mult = c(.1, .1))) +
   scale_y_reverse()
 
@@ -153,10 +156,6 @@ model_df |>
   report()
 
 ##final forecast
-
-# final_model <- model_df |>
-#   select(lm_seasonal) |>
-#   refit(pothole_df, reestimate = TRUE)
 final_model <- pothole_df |> 
   model(lm_seasonal = TSLM(log(report_count + 1) ~ trend() + season()))
 
@@ -213,7 +212,6 @@ report_models <- report_train |>
         naive_seasonal = SNAIVE(log(report_count + 1)),
         mean = MEAN(log(report_count + 1)),
         mean_moving_6 = MEAN(log(report_count + 1), window = 6),
-        mean_moving_12 = MEAN(log(report_count + 1), window = 12),
         lm = TSLM(log(report_count + 1) ~ trend()),
         lm_seasonal = TSLM(log(report_count + 1) ~ trend() + season()),
         arima = ARIMA(log(report_count + 1)),
@@ -223,6 +221,34 @@ report_fc <- report_models |>
   forecast(report_test)
 
 report_fc
+
+###fc accuracy
+fc_acc_report <- report_fc |> 
+  accuracy(report_df,
+           measures = list(point_accuracy_measures, distribution_accuracy_measures, skill_cprs = skill_score(CRPS))) |> 
+  select(request_type, .model, .type, skill_cprs, RMSE) |> 
+  rename(rmse = RMSE) |> 
+  arrange(request_type, desc(skill_cprs))
+
+fc_acc_report
+
+top_models <- fc_acc_report |> 
+  group_by(request_type) |> 
+  slice_head(n = 1) |> 
+  ungroup() |> 
+  select(request_type, .model)
+
+top_models
+
+report_models_final <- report_df_top2 |> 
+  model(naive_seasonal = SNAIVE(log(report_count + 1)),
+        lm_seasonal = TSLM(log(report_count + 1) ~ trend() + season()))
+
+report_models_final |> 
+  forecast(h = 12) |> 
+  semi_join(top_models) |> 
+  autoplot(report_df |> filter(year(create_date) > 2021)) +
+  facet_wrap(vars(request_type), ncol = 1, scales = "free_y")
 
 ##time series features
 
@@ -259,29 +285,4 @@ pcs |>
   scale_y_continuous(expand = expansion(mult = c(.2, .2))) +
   theme(aspect.ratio = 1) +
   guides(color = "none")
-
-##fc accuracy
-fc_acc_report <- report_fc |> 
-  accuracy(report_df,
-           measures = list(point_accuracy_measures, distribution_accuracy_measures, skill_cprs = skill_score(CRPS))) |> 
-  select(request_type, .model, .type, skill_cprs, RMSE) |> 
-  rename(rmse = RMSE) |> 
-  arrange(request_type, desc(skill_cprs))
-
-fc_acc_report
-
-top_models <- fc_acc_report |> 
-  group_by(request_type) |> 
-  slice_head(n = 1) |> 
-  ungroup() |> 
-  select(request_type, .model)
-
-top_models
-
-report_models |> 
-  select(request_type, lm_seasonal, naive_seasonal) |> 
-  refit(report_df, reestimate = TRUE) |> 
-  forecast(h = 12) |> 
-  semi_join(top_models) |> 
-  autoplot(report_df) +
-  facet_wrap(vars(request_type), ncol = 1, scales = "free_y")
+  
