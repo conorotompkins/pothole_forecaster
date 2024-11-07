@@ -7,11 +7,30 @@ format:
 editor: visual
 ---
 
+```{r}
+library(fpp3)
+library(readr)
+library(janitor)
+library(future)
+
+custom_theme <- theme_bw() + 
+  theme(axis.text = element_text(size = 14),
+        axis.title = element_text(size = 18))
+
+theme_set(custom_theme)
+
+plan(multisession)
+
+options(scipen = 999, digits = 4)
+
+set.seed(1234)
+```
+
 ## What is time series forecasting?
 
 Time series forecasting is the practice of making predictions about the future value of some quantitative variable.
 
-Forecast accuracy is typically the focus, not inference.
+Predictive accuracy is typically the focus, not using inference to understand underlying causes.
 
 ## What is a time series?
 
@@ -19,17 +38,31 @@ Data collected about a quantitative variable sequentially over time.
 
 -   Customer demand for a company's product
 
--   Price of electricity
+-   Electricity usage
 
 -   Stock price
 
 -   Pothole reports
 
-Miniature graph of a time series goes here
+## What is a time series
 
-## What can be forecast?
+```{r}
+tsibbledata::vic_elec |> 
+  as_tibble() |> 
+  mutate(day = date(Time)) |> 
+  group_by(day) |> 
+  summarize(max_demand = max(Demand)) |> 
+  as_tsibble(index = day) |> 
+  autoplot() +
+  labs(title = "Peak daily electricity demand in Victoria, Australia",
+       y = "Peak demand (MWh)",
+       x = "Date") +
+  scale_y_continuous(labels = scales::comma_format())
+```
 
-Forecastability is determined by:
+## What can be forecasted?
+
+Key questions:
 
 1.  Do we understand the underlying process that creates the time series (data generating process)?
 
@@ -41,7 +74,9 @@ Forecastability is determined by:
 
     -   Feedback loop
 
-## What can be forecast?
+## What can be forecasted?
+
+Feedback loops AKA "efficient market hypothesis"
 
 > "How much will it rain tomorrow"
 
@@ -51,15 +86,17 @@ vs.
 
 ## Why forecast?
 
--   Improve decision making about the future.
+-   Knowing more about the future changes how we act today.
 
--   Typically related to resource allocation.
+-   Improve decisionmaking about the future.
+
+  -   Typically related to resource allocation.
 
 ## Forecast horizons
 
 -   Short term
 
-    -   What will be the peak demand for electricity be in the next hour?
+    -   What will the peak demand for electricity be in the next hour?
 
 -   Medium term
 
@@ -91,6 +128,12 @@ Future value of pothole complaints as a function of the previous values of potho
 pothole_reports(t+1) ~ pothole_reports(t) + pothole_reports(t-1) + pothole_reports(t-2) + ... + error
 ```
 
+## Why use time series models?
+
+Time series models can typically handle autocorrelation in the data.
+
+- pothole_reports(t) and pothole_reports(t-1) are correlated
+
 ## Forecasting Process
 
 1.  Exploratory data analysis
@@ -102,25 +145,6 @@ pothole_reports(t+1) ~ pothole_reports(t) + pothole_reports(t-1) + pothole_repor
 4.  Evaluate forecast accuracy
 
 ## Code walkthrough
-
-```{r}
-library(fpp3)
-library(readr)
-library(janitor)
-library(future)
-
-custom_theme <- theme_bw() + 
-  theme(axis.text = element_text(size = 14),
-        axis.title = element_text(size = 18))
-
-theme_set(custom_theme)
-
-plan(multisession)
-
-options(scipen = 999, digits = 4)
-
-set.seed(1234)
-```
 
 ```{r}
 #read in pothole data
@@ -135,7 +159,7 @@ report_data <- read_csv("inputs/wprdc_311_2024_10_20.csv") |>
 
 ::::: columns
 ::: {.column width="50%"}
-Time series table `({tsibble})` data structure:
+Time series table data structure:
 
 -   Key: `request_type`
 
@@ -163,6 +187,7 @@ pothole_df
 ## Exploratory data analysis
 
 ```{r}
+#| echo: true
 autoplot(pothole_df)
 ```
 
@@ -171,6 +196,7 @@ autoplot(pothole_df)
 Seasonal plot shows each year across months
 
 ```{r}
+#| echo: true
 gg_season(pothole_df)
 ```
 
@@ -179,15 +205,17 @@ gg_season(pothole_df)
 Seasonal subseries plot shows each month across years
 
 ```{r}
+#| echo: true
 gg_subseries(pothole_df) +
   facet_wrap(vars(month(create_date, label = TRUE)), ncol = 3)
 ```
 
-## Exploratory data analysis
+## Exploratory data analysis {.smaller}
 
 Time series decomposition
 
 ```{r}
+#| echo: true
 dcmp <- pothole_df |>
   model(stl = STL(report_count, robust = TRUE))
 
@@ -211,11 +239,9 @@ pothole_df |>
   geom_point(data = outliers, color = "red")
 ```
 
-## Modelling
+## Train/test split
 
--   Train/test split
-
--   Use last 20% of observations as test data
+You always want to validate a model's performance with data it hasn't seen already. This analysis uses the last 20% of observations as test data.
 
 ```{r}
 #| echo: true
@@ -226,7 +252,7 @@ data_train <- pothole_df |>
   anti_join(data_test, by = "create_date")
 ```
 
-## Modelling {.smaller}
+## Model types
 
 -   NAIVE: play the last value forward over the forecast horizon
 
@@ -234,55 +260,96 @@ data_train <- pothole_df |>
 
 -   MEAN: take the average of the entire series and play it forward
 
-    -   Use `window()` to apply a window for moving averages
+    -   Use `window()` to apply a window for rolling averages
 
-## Modelling {.smaller}
+## Model types {.smaller}
 
 -   TSLM\*: fit a linear model
 
     -   Use `seasonal()` to add dummy variables for seasonal effects
 
--   ETS: **e**xponen**t**ial **s**moothing using a weighted average based on the recency of the observations
+-   ETS: **e**xponen**t**ial **s**moothing
+
+    -   Use a weighted average based on the recency of the observations
 
 -   ARIMA\*: **A**uto**r**egressive **I**ntegrated **M**oving **A**verage
 
-    -   Automatically determines optimal model parameters (PDQ, seasonal PDQ)
+    -   `fable::ARIMA` automatically determines optimal model parameters (PDQ, seasonal PDQ)
 
         -   AKA "autoarima"
 
-    -   You can manually set these
+        -   You can also manually set these
+- More available in `{fable}`
 
-## Modelling
+## Fit models
 
 Fit models on training data
 
 ```{r}
+#| echo: true
+#| cache: true
 model_df <- data_train |> 
   model(naive = NAIVE(log(report_count + 1)),
         naive_seasonal = SNAIVE(log(report_count + 1)),
         mean = MEAN(log(report_count + 1)),
         mean_moving_6 = MEAN(log(report_count + 1), window = 6),
-        mean_moving_12 = MEAN(log(report_count + 1), window = 12),
         lm = TSLM(log(report_count + 1) ~ trend()),
         lm_seasonal = TSLM(log(report_count + 1) ~ trend() + season()),
         arima = ARIMA(log(report_count + 1)),
         ets = ETS(log(report_count + 1)))
-
-model_df
 ```
 
-## Modelling
+::: aside
+Transformations of target variable are automatically reversed in `fable::forecast`
+:::
 
-Make forecast from fit models
+## Fit models
 
 ```{r}
-pothole_fc <- model_df |> 
-  forecast(data_test)
+model_df
+```
+## Model summary
 
+Inspect model
+
+```{r}
+model_df |> 
+  select(lm_seasonal) |> 
+  report()
+```
+
+## Evaluate fit on training data
+
+Plot forecast vs. training data
+
+```{r}
+model_df |> 
+  select(ets) |> 
+  augment() |> 
+  ggplot(aes(x = create_date)) +
+  geom_line(aes(y = report_count, color = "observed"), lwd = 1) +
+  geom_line(aes(y = .fitted, color = "prediction"), lwd = 1) +
+  scale_color_manual(values = c("observed" = "black", "prediction" = "orange")) +
+  labs(title = "ETS model",
+       color = NULL) +
+  theme(legend.text = element_text(size = 16))
+```
+
+## Forecast on test data
+
+Make forecast from fit models onto test data
+
+```{r}
+#| echo: true
+#| cache: true
+pothole_fc <- forecast(model_df, data_test)
+```
+
+```{r}
 pothole_fc
 ```
 
-## Modelling {.smaller}
+## Accuracy {.smaller}
 
 Accuracy metrics
 
@@ -298,37 +365,29 @@ Accuracy metrics
 
 -   Others available in `{fabletools}`
 
-## Modelling
+## Forecast accuracy
 
-Evaluate forecast accuracy based on full time series (train + test)
-
+Evaluate forecast accuracy based on full time series
 ```{r}
+#| echo: true
+#| cache: true
 fc_acc <- pothole_fc |> 
   accuracy(pothole_df,
-           measures = list(point_accuracy_measures, distribution_accuracy_measures, skill_cprs = skill_score(CRPS))) |> 
+           measures = list(point_accuracy_measures, 
+                           distribution_accuracy_measures, 
+                           skill_cprs = skill_score(CRPS))) |> 
   rename(rmse = RMSE) |> 
   select(request_type, .model, .type, skill_cprs, rmse) |> 
   arrange(desc(skill_cprs))
+```
 
+## Forecast accuracy
+
+```{r}
 fc_acc
 ```
 
-## Modelling
-
-Plot forecast vs. training data
-
-```{r}
-model_df |> 
-  select(ets) |> 
-  augment() |> 
-  ggplot(aes(x = create_date)) +
-  geom_line(aes(y = report_count, color = "observed")) +
-  geom_line(aes(y = .fitted, color = "prediction")) +
-  scale_color_manual(values = c("observed" = "black", "prediction" = "orange")) +
-  labs(color = NULL)
-```
-
-## Modelling
+## Plot forecast
 
 Plot forecast vs. test data
 
@@ -347,25 +406,18 @@ pothole_fc |>
   guides(fill_ramp = "none",
          fill = "none",
          color = "none") +
-  labs(title = "Top 3 forecasts by model",
-       subtitle = "Sorted descending by accuracy")
+  labs(title = "Forecasts of top 3 models",
+       subtitle = "Sorted descending by accuracy") +
+  theme(strip.text = element_text(size = 14))
 ```
 
-## Modelling
-
-Inspect top model
-
-```{r}
-model_df |> 
-  select(lm_seasonal) |> 
-  report()
-```
-
-## Modelling
+## Refit and forecast
 
 Refit top model on entire time series and make a true 12 month forecast
 
 ```{r}
+#| echo: true
+#| output-location: slide
 final_model <- pothole_df |> 
   model(lm_seasonal = TSLM(log(report_count + 1) ~ trend() + season()))
 
@@ -377,9 +429,33 @@ final_model |>
        y = "Report count")
 ```
 
+## Questions?
+
+## References
+
+Material adapted from [Forecasting: Principles and Practice (3rd ed)](https://otexts.com/fpp3/) by Rob J Hyndman and George Athanasopoulos
+
 ## Appendix
 
-Cross-validation
+## Autocorrelation
+
+Values of `report_count` are correlated across time
+
+```{r}
+ACF(pothole_df) |> 
+  autoplot()
+```
+
+## Autocorrelation
+
+Partial autocorrelation measures correlation between gapped lags of report_count, accounting for the relationship between the intermediate lags
+
+```{r}
+PACF(pothole_df) |> 
+  autoplot()
+```
+
+## Cross-validation
 
 Create multiple train/test sets with rolling origins
 
@@ -387,10 +463,45 @@ Create multiple train/test sets with rolling origins
 #| echo: true
 
 pothole_cv <- stretch_tsibble(pothole_df, .step = 6, .init = 24)
+```
 
+```{r}
 pothole_cv
 ```
 
 ## Cross-validation
 
 [![Forecasting: Principles and Practice](https://otexts.com/fpp3/fpp_files/figure-html/cv1-1.png)](https://otexts.com/fpp3/tscv.html)
+
+## Time series features
+
+```{r}
+report_df <- report_data |> 
+  summarize(report_count = n(),
+            .by = c(create_date, request_type)) |> 
+  ungroup() |>
+  filter(year(create_date) >= 2016) |> 
+  as_tsibble(key = request_type, index = create_date)
+
+autoplot(report_df)
+```
+
+## Time series features
+
+```{r}
+top_request_type <- report_df |> 
+  as_tibble() |> 
+  summarize(report_count = sum(report_count),
+            .by = c(request_type)) |> 
+  slice_max(n = 10, order_by = report_count)
+
+report_df |> 
+  semi_join(top_request_type) |> 
+  autoplot()
+```
+
+```{r}
+report_df |> 
+  semi_join(top_request_type)
+```
+
