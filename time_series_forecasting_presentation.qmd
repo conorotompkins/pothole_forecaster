@@ -12,6 +12,10 @@ library(fpp3)
 library(readr)
 library(janitor)
 library(future)
+library(hrbrthemes)
+library(forcats)
+library(broom)
+library(ggrepel)
 
 custom_theme <- theme_bw() + 
   theme(axis.text = element_text(size = 14),
@@ -30,7 +34,7 @@ set.seed(1234)
 
 Time series forecasting is the practice of making predictions about the future value of some quantitative variable.
 
-Predictive accuracy is typically the focus, not using inference to understand underlying causes.
+Predictive accuracy is typically the focus, not inference for understanding underlying causes.
 
 ## What is a time series?
 
@@ -41,6 +45,8 @@ Data collected about a quantitative variable sequentially over time.
 -   Electricity usage
 
 -   Stock price
+
+-   Network latency
 
 -   Pothole reports
 
@@ -86,9 +92,7 @@ vs.
 
 ## Why forecast?
 
--   Knowing more about the future changes how we act today.
-
--   Improve decisionmaking about the future.
+-   Knowing more about the future means we can make better decisions today.
 
   -   Typically related to resource allocation.
 
@@ -125,14 +129,16 @@ Future value of pothole complaints as a function of the previous values of potho
 ```{r}
 #| eval: false
 #| echo: true
-pothole_reports(t+1) ~ pothole_reports(t) + pothole_reports(t-1) + pothole_reports(t-2) + ... + error
+pothole_reports(t+1) ~ pothole_reports(t) + pothole_reports(t-1) + ... + error
 ```
 
 ## Why use time series models?
 
 Time series models can typically handle autocorrelation in the data.
 
-- pothole_reports(t) and pothole_reports(t-1) are correlated
+- `pothole_reports(t)` and `pothole_reports(t-1)` are correlated
+
+- This can cause correlated error in regression models
 
 ## Forecasting Process
 
@@ -264,7 +270,7 @@ data_train <- pothole_df |>
 
 ## Model types {.smaller}
 
--   TSLM\*: fit a linear model
+-   TSLM\*: fit a linear model along the `trend()`
 
     -   Use `seasonal()` to add dummy variables for seasonal effects
 
@@ -279,7 +285,16 @@ data_train <- pothole_df |>
         -   AKA "autoarima"
 
         -   You can also manually set these
+        
 - More available in `{fable}`
+
+::: aside
+\* These models can use exogenous variables to capture additional information
+:::
+
+::: {.notes}
+Notes about ETS and ARIMA parameters
+:::
 
 ## Fit models
 
@@ -306,13 +321,14 @@ Transformations of target variable are automatically reversed in `fable::forecas
 ## Fit models
 
 ```{r}
-model_df
+glimpse(model_df)
 ```
 ## Model summary
 
 Inspect model
 
 ```{r}
+#| echo: true
 model_df |> 
   select(lm_seasonal) |> 
   report()
@@ -429,6 +445,10 @@ final_model |>
        y = "Report count")
 ```
 
+::: aside
+`fable::forecast` automatically builds out a new dataframe of the specified horizon with the `trend()` and `season()` variables
+:::
+
 ## Questions?
 
 ## References
@@ -448,7 +468,7 @@ ACF(pothole_df) |>
 
 ## Autocorrelation
 
-Partial autocorrelation measures correlation between gapped lags of report_count, accounting for the relationship between the intermediate lags
+Partial autocorrelation measures correlation between gapped lags of `report_count`, accounting for the relationship between the intermediate lags
 
 ```{r}
 PACF(pothole_df) |> 
@@ -482,26 +502,53 @@ report_df <- report_data |>
   ungroup() |>
   filter(year(create_date) >= 2016) |> 
   as_tsibble(key = request_type, index = create_date)
-
-autoplot(report_df)
 ```
-
-## Time series features
 
 ```{r}
 top_request_type <- report_df |> 
   as_tibble() |> 
   summarize(report_count = sum(report_count),
             .by = c(request_type)) |> 
-  slice_max(n = 10, order_by = report_count)
+  slice_max(n = 12, order_by = report_count)
 
-report_df |> 
-  semi_join(top_request_type) |> 
-  autoplot()
+report_df_top12 <- report_df |> 
+  semi_join(top_request_type, by = "request_type")
+
+report_df_top12 |> 
+  mutate(request_type = fct_reorder(request_type, report_count, sum, .desc = TRUE)) |> 
+  autoplot() +
+  facet_wrap(vars(request_type), scales = "free_y") +
+  guides(color = "none") +
+  theme(axis.text.x = element_text(size = 6))
 ```
+
+## Time series features
 
 ```{r}
-report_df |> 
-  semi_join(top_request_type)
+report_features <- report_df_top12 |> 
+  features(report_count, feature_set(pkgs = "feasts"))
+
+report_features |> 
+  slice_head(n = 1) |> 
+  glimpse()
 ```
 
+## Time series features
+
+Principal Component Analysis
+
+```{r}
+pcs <- report_features |>
+  select(-request_type, -contains("zero")) |>
+  prcomp(scale = TRUE) |>
+  augment(report_features)
+
+pcs |>
+  ggplot(aes(x = .fittedPC1, y = .fittedPC2, col = request_type)) +
+  geom_point() +
+  geom_label_repel(aes(label = request_type)) +
+  scale_x_continuous(expand = expansion(mult = c(.2, .2))) +
+  scale_y_continuous(expand = expansion(mult = c(.2, .2))) +
+  theme(aspect.ratio = 1) +
+  guides(color = "none")
+```
