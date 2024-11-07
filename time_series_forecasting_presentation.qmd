@@ -293,7 +293,13 @@ data_train <- pothole_df |>
 :::
 
 ::: {.notes}
-Notes about ETS and ARIMA parameters
+ARIMA:
+
+- P: number of autoregressive terms
+
+- D: number of differences required to make it stationary
+
+- Q: number of lagged forecast errors
 :::
 
 ## Fit models
@@ -449,11 +455,11 @@ final_model |>
 `fable::forecast` automatically builds out a new dataframe of the specified horizon with the `trend()` and `season()` variables
 :::
 
-## Questions?
-
 ## References
 
 Material adapted from [Forecasting: Principles and Practice (3rd ed)](https://otexts.com/fpp3/) by Rob J Hyndman and George Athanasopoulos
+
+## Questions?
 
 ## Appendix
 
