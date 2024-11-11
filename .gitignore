@@ -39,3 +39,7 @@ vignettes/*.pdf
 .Renviron
 
 inputs
+
+*.html
+*_files
+*.pdf
