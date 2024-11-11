@@ -397,10 +397,10 @@ fc_acc <- pothole_fc |>
   accuracy(pothole_df,
            measures = list(point_accuracy_measures, 
                            distribution_accuracy_measures, 
-                           skill_cprs = skill_score(CRPS))) |> 
+                           skill_crps = skill_score(CRPS))) |> 
   rename(rmse = RMSE) |> 
-  select(request_type, .model, .type, skill_cprs, rmse) |> 
-  arrange(desc(skill_cprs))
+  select(request_type, .model, .type, skill_crps, rmse) |> 
+  arrange(desc(skill_crps))
 ```
 
 ## Forecast accuracy
